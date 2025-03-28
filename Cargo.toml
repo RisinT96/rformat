@@ -1,0 +1,11 @@
+[package]
+authors = ["Tal Risin"]
+description = "Runtime formatting library"
+edition = "2024"
+keywords = ["format", "runtime"]
+license = "GPL-3.0"
+name = "rformat"
+repository = "https://github.com/RisinT96/rformat"
+version = "0.1.0"
+
+[dependencies]
