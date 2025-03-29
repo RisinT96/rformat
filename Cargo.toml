@@ -9,3 +9,4 @@ repository = "https://github.com/RisinT96/rformat"
 version = "0.1.0"
 
 [dependencies]
+paste = "1.0.15"
