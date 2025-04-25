@@ -32,7 +32,7 @@ pub struct Wrap<'a, T>(pub &'a T);
 /// # Usage
 ///
 /// ```
-/// # use rformat::argument::*;
+/// # use rformat::prelude::*;
 ///
 /// let a: u32 = 5;
 ///
@@ -163,14 +163,13 @@ macro_rules! argument_option {
 /// # Example
 ///
 /// ```rust
-/// # use rformat::{argument, argument_option};
-/// # use rformat::argument::*;
+/// # use rformat::prelude::*;
 ///
 /// let my_value = 5;
-/// let argument = argument!(my_value);
+/// let argument = to_argument!(my_value);
 /// ```
 #[macro_export]
-macro_rules! argument {
+macro_rules! to_argument {
     ($value:ident) => {
         Argument {
             name: stringify!($value),
@@ -189,7 +188,8 @@ macro_rules! argument {
 
 #[cfg(test)]
 mod tests {
-    use crate::argument::*;
+    use crate::prelude::*;
+    use std::fmt;
 
     #[test]
     fn check_binary() {
@@ -201,7 +201,7 @@ mod tests {
         }
 
         let val = A;
-        let arg = argument!(val);
+        let arg = to_argument!(val);
 
         assert_eq!(arg.name, "val");
 
@@ -227,7 +227,7 @@ mod tests {
         }
 
         let val = A;
-        let arg = argument!(val);
+        let arg = to_argument!(val);
 
         assert_eq!(arg.name, "val");
 
@@ -253,7 +253,7 @@ mod tests {
         }
 
         let val = A;
-        let arg = argument!(val);
+        let arg = to_argument!(val);
 
         assert_eq!(arg.name, "val");
 
