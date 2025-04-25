@@ -1,35 +1,59 @@
 #![allow(unused)]
 
 use paste::paste;
-use std::fmt::{self, write};
+use std::fmt;
 
-/// Type wrapper
-/// Workaround to disambiguate [Pointer](std::fmt::Pointer) types.
-/// Whatever the type `T`, `&T` will always implement pointer formatting, this causes some ambiguity
-/// regarding whether `T` is the type or the reference to the type.
-/// Using the wrapper will disambiguate T, while referencing the wrapper allows us to use
-/// autoref-specialization
-pub struct Wrap<T>(pub T);
+/// A wrapper type used for autoref-specialization pattern in formatting traits.
+///
+/// This wrapper solves an ambiguity problem with formatting traits:
+/// - For any type `T`, its reference `&T` automatically implements `fmt::Pointer`
+/// - This makes it difficult to determine if the original type `T` itself implements a format trait
+///
+/// By wrapping `T` in `Wrap<T>`, we can:
+/// 1. Implement formatting traits specifically for the wrapped type
+/// 2. Use references to the wrapper (`&Wrap<T>`) for specialized trait detection
+/// 3. Correctly determine which formatting traits the original type implements
+pub struct Wrap<'a, T>(pub &'a T);
 
-/// Generates structs and traits to use autoref-specialization to determine if a type T implements
-/// the format trait, depending on that, `wrap` returns `None` or `Some(...)`
-/// Example:
+/// This macro generates the necessary structs and traits to use the autoref-specialization pattern
+/// for determining if a type `T` implements a specific formatting trait (e.g., `std::fmt::Binary`).
+///
+/// The generated code allows for runtime detection of whether a type implements a given formatting
+/// trait. If the type implements the trait, the `wrap` method will return `Some(...)`, otherwise it
+/// will return `None`.
+///
+/// # Example
+///
 /// ```ignore
 /// generate_fmt_option!(Binary);
 /// generate_fmt_option!(Pointer);
 /// ```
+///
+/// # Usage
+///
 /// ```
 /// # use rformat::argument::*;
 ///
 /// let a: u32 = 5;
 ///
-/// // u32 implements std::fmt::Binary
-/// assert!((&Wrap(a)).binary().wrap(&a).is_some());
-/// // u32 does not implement std::fmt::Pointer
-/// assert!((&Wrap(a)).pointer().wrap(&a).is_none());
-/// // &u32 implements std::fmt::Pointer
-/// assert!((&Wrap(&a)).pointer().wrap(&&a).is_some());
+/// // `u32` implements `std::fmt::Binary`
+/// assert!((&Wrap(&a)).binary().wrap(&a).is_some());
+///
+/// // `u32` does not implement `std::fmt::Pointer`
+/// assert!((&Wrap(&a)).pointer().wrap(&a).is_none());
+///
+/// // `&u32` implements `std::fmt::Pointer`
+/// assert!((&Wrap(&&a)).pointer().wrap(&&a).is_some());
 /// ```
+///
+/// # Generated Code
+///
+/// For a given formatting trait (e.g., `Binary`), the macro generates:
+/// - A tag struct (`BinaryTag`) and a "no tag" struct (`NoBinaryTag`)
+/// - Two traits: `BinaryKind` and `NoBinaryKind`
+/// - Implementations of these traits for `Wrap<T>` and `&Wrap<T>`
+/// - A `wrap` method for the tag structs to return `Some` or `None` based on whether the type
+///   implements the formatting trait
 macro_rules! generate_fmt_option {
     ($name:ident) => {
         paste! {
@@ -54,8 +78,8 @@ macro_rules! generate_fmt_option {
                 }
             }
 
-            impl<T: std::fmt::$name> $kind for Wrap<T> {}
-            impl<T> $no_kind for &Wrap<T> {}
+            impl<T: std::fmt::$name> $kind for Wrap<'_, T> {}
+            impl<T> $no_kind for &Wrap<'_, T> {}
 
             impl $tag {
                 #[inline]
@@ -72,6 +96,7 @@ macro_rules! generate_fmt_option {
     };
 }
 
+// Generate autoref-specialization support for known formatting traits.
 generate_fmt_option!(Binary);
 generate_fmt_option!(Debug);
 generate_fmt_option!(Display);
@@ -82,33 +107,73 @@ generate_fmt_option!(Pointer);
 generate_fmt_option!(UpperExp);
 generate_fmt_option!(UpperHex);
 
-/// Struct holds references to the same variable, but with different trait impls.
-/// This is necessary to pass trait impl information into the runtime format string evaluator.
-/// If a format hint is not implemented, the appropriate value will contain a `None`, and will
-/// return an error at runtime.
+/// Represents a collection of optional formatting traits for a value.
+///
+/// The `Argument` struct holds references to various formatting traits
+/// that can be used to format a value in different styles. Each field
+/// corresponds to a specific formatting trait, and the field is `None`
+/// if the trait is not implemented for the value.
+///
+/// # Fields
+/// - `binary`: Optional reference to a type implementing the `fmt::Binary` trait,
+///   used for binary formatting (e.g., `0b1010`).
+/// - `debug`: Optional reference to a type implementing the `fmt::Debug` trait,
+///   used for developer-facing formatting (e.g., `"{:?}"`).
+/// - `display`: Optional reference to a type implementing the `fmt::Display` trait,
+///   used for user-facing formatting (e.g., `"{}"`).
+/// - `lower_exp`: Optional reference to a type implementing the `fmt::LowerExp` trait,
+///   used for scientific notation with lowercase `e` (e.g., `"1.0e10"`).
+/// - `lower_hex`: Optional reference to a type implementing the `fmt::LowerHex` trait,
+///   used for hexadecimal formatting with lowercase letters (e.g., `"0x1a"`).
+/// - `octal`: Optional reference to a type implementing the `fmt::Octal` trait,
+///   used for octal formatting (e.g., `"0o12"`).
+/// - `pointer`: Optional reference to a type implementing the `fmt::Pointer` trait,
+///   used for pointer formatting (e.g., `"0x1234abcd"`).
+/// - `upper_exp`: Optional reference to a type implementing the `fmt::UpperExp` trait,
+///   used for scientific notation with uppercase `E` (e.g., `"1.0E10"`).
+/// - `upper_hex`: Optional reference to a type implementing the `fmt::UpperHex` trait,
+///   used for hexadecimal formatting with uppercase letters (e.g., `"0x1A"`).
 pub struct Argument<'a> {
-    binary: Option<&'a dyn fmt::Binary>,
-    debug: Option<&'a dyn fmt::Debug>,
-    display: Option<&'a dyn fmt::Display>,
-    lower_exp: Option<&'a dyn fmt::LowerExp>,
-    lower_hex: Option<&'a dyn fmt::LowerHex>,
-    octal: Option<&'a dyn fmt::Octal>,
-    pointer: Option<&'a dyn fmt::Pointer>,
-    upper_exp: Option<&'a dyn fmt::UpperExp>,
-    upper_hex: Option<&'a dyn fmt::UpperHex>,
+    pub name: &'a str,
+    pub binary: Option<&'a dyn fmt::Binary>,
+    pub debug: Option<&'a dyn fmt::Debug>,
+    pub display: Option<&'a dyn fmt::Display>,
+    pub lower_exp: Option<&'a dyn fmt::LowerExp>,
+    pub lower_hex: Option<&'a dyn fmt::LowerHex>,
+    pub octal: Option<&'a dyn fmt::Octal>,
+    pub pointer: Option<&'a dyn fmt::Pointer>,
+    pub upper_exp: Option<&'a dyn fmt::UpperExp>,
+    pub upper_hex: Option<&'a dyn fmt::UpperHex>,
 }
 
 #[macro_export]
 macro_rules! argument_option {
     ($ty:ident, $value:ident) => {
-        (&Wrap($value)).$ty().wrap(&$value)
+        (&Wrap(&$value)).$ty().wrap(&$value)
     };
 }
 
+/// A macro to create an `Argument` struct by populating its fields using the `argument_option!` macro.
+///
+/// # Parameters
+///
+/// - `$value`: The identifier that is passed to the `argument_option!` macro to generate the values
+///   for the fields of the `Argument` struct.
+///
+/// # Example
+///
+/// ```rust
+/// # use rformat::{argument, argument_option};
+/// # use rformat::argument::*;
+///
+/// let my_value = 5;
+/// let argument = argument!(my_value);
+/// ```
 #[macro_export]
 macro_rules! argument {
     ($value:ident) => {
         Argument {
+            name: stringify!($value),
             binary: argument_option!(binary, $value),
             debug: argument_option!(debug, $value),
             display: argument_option!(display, $value),
@@ -121,33 +186,6 @@ macro_rules! argument {
         }
     };
 }
-
-macro_rules! impl_fmt_option {
-    ($name:ident) => {
-        paste! {
-            impl_fmt_option! {$name, [<$name:snake>]}
-        }
-    };
-    ($name: ident, $name_snake: ident) => {
-        impl std::fmt::$name for Argument<'_> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                let value = self.$name_snake.ok_or(std::fmt::Error)?;
-
-                std::fmt::$name::fmt(value, f)
-            }
-        }
-    };
-}
-
-impl_fmt_option!(Binary);
-impl_fmt_option!(Debug);
-impl_fmt_option!(Display);
-impl_fmt_option!(LowerExp);
-impl_fmt_option!(LowerHex);
-impl_fmt_option!(Octal);
-impl_fmt_option!(Pointer);
-impl_fmt_option!(UpperExp);
-impl_fmt_option!(UpperHex);
 
 #[cfg(test)]
 mod tests {
@@ -163,10 +201,12 @@ mod tests {
         }
 
         let val = A;
+        let arg = argument!(val);
 
-        let arg = argument!(A);
+        assert_eq!(arg.name, "val");
 
         assert!(arg.binary.is_some());
+
         assert!(arg.debug.is_none());
         assert!(arg.display.is_none());
         assert!(arg.lower_exp.is_none());
@@ -187,11 +227,13 @@ mod tests {
         }
 
         let val = A;
+        let arg = argument!(val);
 
-        let arg = argument!(A);
+        assert_eq!(arg.name, "val");
+
+        assert!(arg.debug.is_some());
 
         assert!(arg.binary.is_none());
-        assert!(arg.debug.is_some());
         assert!(arg.display.is_none());
         assert!(arg.lower_exp.is_none());
         assert!(arg.lower_hex.is_none());
@@ -211,8 +253,11 @@ mod tests {
         }
 
         let val = A;
+        let arg = argument!(val);
 
-        let arg = argument!(A);
+        assert_eq!(arg.name, "val");
+
+        assert!(arg.pointer.is_some());
 
         assert!(arg.binary.is_none());
         assert!(arg.debug.is_none());
@@ -220,42 +265,7 @@ mod tests {
         assert!(arg.lower_exp.is_none());
         assert!(arg.lower_hex.is_none());
         assert!(arg.octal.is_none());
-        assert!(arg.pointer.is_some());
         assert!(arg.upper_exp.is_none());
         assert!(arg.upper_hex.is_none());
-    }
-
-    macro_rules! check_fmt {
-        ($ty:ident, $hint:literal) => {
-            paste! {
-                #[test]
-                fn [<check_fmt_ $ty>]() {
-                    let a = 12345;
-                    let arg = argument!(a);
-
-                    assert_eq!(format!(concat!("{:",$hint,"}"),a),
-                               format!(concat!("{:",$hint,"}"),arg)
-                    );
-                }
-            }
-        };
-    }
-
-    check_fmt!(binary, "b");
-    check_fmt!(debug, "?");
-    check_fmt!(display, "");
-    check_fmt!(lower_exp, "e");
-    check_fmt!(lower_hex, "x");
-    check_fmt!(octal, "o");
-    check_fmt!(upper_exp, "E");
-    check_fmt!(upper_hex, "X");
-
-    #[test]
-    fn check_fmt_pointer() {
-        let a = 12345;
-        let ref_a = &a;
-        let arg = argument!(ref_a);
-
-        assert_eq!(format!("{:p}", ref_a), format!("{:p}", arg));
     }
 }
