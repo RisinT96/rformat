@@ -1,2 +1,2 @@
-pub mod argument;
+pub mod formattable;
 pub mod prelude;
