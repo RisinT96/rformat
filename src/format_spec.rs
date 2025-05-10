@@ -65,7 +65,7 @@ pub fn parse_format_spec(format_spec: &str) -> Result<FormatSpec> {
 
     // Parse fill and alignment
     let (mut fill, mut align) = match (
-        format_spec_substr.chars().nth(0),
+        format_spec_substr.chars().next(),
         format_spec_substr.chars().nth(1),
     ) {
         (Some(fill), Some('<')) => (Some(fill), Some(Align::Left)),
@@ -88,7 +88,7 @@ pub fn parse_format_spec(format_spec: &str) -> Result<FormatSpec> {
     }
 
     // Parse sign
-    let sign = match format_spec_substr.chars().nth(0) {
+    let sign = match format_spec_substr.chars().next() {
         Some('+') => Some(Sign::Plus),
         Some('-') => Some(Sign::Minus),
         _ => None,
@@ -100,10 +100,7 @@ pub fn parse_format_spec(format_spec: &str) -> Result<FormatSpec> {
     }
 
     // Parse alternate form (#)
-    let alternate = match format_spec_substr.chars().nth(0) {
-        Some('#') => true,
-        _ => false,
-    };
+    let alternate = matches!(format_spec_substr.chars().next(), Some('#'));
 
     // Skip alternate form character
     if alternate {
@@ -111,10 +108,7 @@ pub fn parse_format_spec(format_spec: &str) -> Result<FormatSpec> {
     }
 
     // Parse zero padding
-    let zero_pad = match format_spec_substr.chars().nth(0) {
-        Some('0') => true,
-        _ => false,
-    };
+    let zero_pad = matches!(format_spec_substr.chars().next(), Some('0'));
 
     // Skip zero pad character
     if zero_pad {
@@ -178,7 +172,7 @@ pub fn parse_format_spec(format_spec: &str) -> Result<FormatSpec> {
 
             format_spec_substr = &format_spec_substr[precision.len()..];
 
-            parse_count(precision)?.map(|p| Precision::Count(p))
+            parse_count(precision)?.map(Precision::Count)
         }
     } else {
         // Option 2

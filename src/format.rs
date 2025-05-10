@@ -1,33 +1,39 @@
 use crate::error::{FormatError, Result};
-use crate::format_spec::{self, Argument, FormatSpec};
+use crate::format_spec::{self, Argument, Count, FormatSpec, Precision};
 use crate::prelude::*;
 
-pub struct Arg<'n, 'f> {
-    identifier: &'n str,
-    formattable: Formattable<'f>,
+pub struct Parameter<'ident, 'formattable> {
+    identifier: &'ident str,
+    formattable: Formattable<'formattable>,
 }
 
 #[macro_export]
-macro_rules! arg {
-    ($arg:expr) => {
-        $crate::format::Arg {
-            identifier: stringify!($arg),
-            formattable: into_formattable!($arg),
+macro_rules! param {
+    ($param_name:ident = $param:expr) => {
+        $crate::format::Parameter {
+            identifier: stringify!($param_name),
+            formattable: into_formattable!($param),
+        }
+    };
+    ($param:expr) => {
+        $crate::format::Parameter {
+            identifier: stringify!($param),
+            formattable: into_formattable!($param),
         }
     };
 }
 
 #[macro_export]
-macro_rules! args {
-    ($($args:expr),* $(,)?) => (
-        vec![$(arg![$args]),*]
+macro_rules! params {
+    ($($params:expr),* $(,)?) => (
+        vec![$(param![$params]),*]
     );
 }
 
-pub fn format(fmt: &str, args: &[Arg]) -> Result<String> {
+pub fn rformat(fmt: &str, params: &[Parameter]) -> Result<String> {
     let mut result = String::new();
 
-    let mut arg_iter = args.into_iter().cycle();
+    let mut param_iter = params.iter();
 
     let mut chars = fmt.char_indices().peekable();
 
@@ -38,14 +44,9 @@ pub fn format(fmt: &str, args: &[Arg]) -> Result<String> {
                 chars.next();
                 result.push('{');
             } else {
-                // Actual parameter, read until `}`
-                if args.len() == 0 {
-                    return Err(FormatError::NoParameter(i, fmt.to_string()));
-                }
-
                 let mut format = String::new();
 
-                while let Some((_, next)) = chars.next() {
+                for (_, next) in chars.by_ref() {
                     if next == '}' {
                         break;
                     }
@@ -53,9 +54,7 @@ pub fn format(fmt: &str, args: &[Arg]) -> Result<String> {
                     format.push(next);
                 }
 
-                // Unwrap safety: we already checked that args.len() is not 0, and the iterator is
-                // cyclic, so next should never fail.
-                write(&mut result, &format, args, arg_iter.next().unwrap())?;
+                write(&mut result, &format, params, &mut param_iter)?;
             }
         } else if c == '}' {
             if let Some((_, '}')) = chars.peek() {
@@ -76,38 +75,191 @@ pub fn format(fmt: &str, args: &[Arg]) -> Result<String> {
 }
 
 #[derive(Debug, PartialEq)]
-struct Format<'f> {
-    argument: Option<Argument<'f>>,
-    format_spec: FormatSpec<'f>,
+struct Format<'format_string> {
+    argument: Option<Argument<'format_string>>,
+    format_spec: FormatSpec<'format_string>,
 }
 
-fn write<W: std::fmt::Write>(
+fn write<
+    'param,
+    'ident,
+    'formattable,
+    W: std::fmt::Write,
+    I: Iterator<Item = &'param Parameter<'ident, 'formattable>>,
+>(
     dst: &mut W,
     format: &str,
-    args: &[Arg],
-    current_arg: &Arg,
-) -> Result<()> {
+    app_params: &'param [Parameter<'ident, 'formattable>],
+    params_iter: &mut I,
+) -> Result<()>
+where
+    'ident: 'param,
+    'formattable: 'param,
+{
     let format = parse_format(format)?;
+    let format_spec = &format.format_spec;
 
-    let argument = match format.argument {
-        Some(Argument::Identifier(i)) => args
-            .iter()
-            .find(|a| a.identifier == i)
-            .ok_or_else(|| FormatError::NoNamedParameter(i.to_string()))?,
-        Some(Argument::Integer(i)) => args.get(i).ok_or(FormatError::NoPositionalParameter(i))?,
-        None => current_arg,
-    };
+    // In case of `Precision::Star`, we have to extract the "precision" before the parameter, as it
+    // cna influence the params iterator.
+    // In other cases, order doesn't matter.
+    // See "3. An asterisk .*" in  https://doc.rust-lang.org/std/fmt/#precision
+    let precision = get_precision_from_params(&format_spec.precision, app_params, params_iter)?;
+    let parameter = get_parameter_from_params(&format.argument, app_params, params_iter)?;
 
-    let as_display = argument
+    let width = get_width_from_params(&format_spec, app_params)?
+        // Setting width to 0 will make it have no effect.
+        .unwrap_or(0);
+
+    let as_display = parameter
         .formattable
         .try_as_display()
         .ok_or(std::fmt::Error)?;
 
-    write!(dst, "{}", as_display)?;
+    let mut out = match precision {
+        None => format!("{}", as_display),
+        Some(p) => format!("{:.p$}", as_display),
+    };
+
+    // Handle width + fill + alignment
+    if width > out.len() {
+        let total_pad = width - out.len();
+        let fill = format.format_spec.fill;
+
+        match format.format_spec.align {
+            format_spec::Align::Left => {
+                // Pad on the right
+                for _ in 0..total_pad {
+                    out.push(fill);
+                }
+            }
+            format_spec::Align::Center => {
+                // Pad equally on both sides (left gets extra if odd)
+                let left_pad = (total_pad / 2) + (total_pad % 2);
+                let right_pad = total_pad / 2;
+
+                for _ in 0..left_pad {
+                    out.insert(0, fill);
+                }
+                for _ in 0..right_pad {
+                    out.push(fill);
+                }
+            }
+            format_spec::Align::Right => {
+                // Pad on the left
+                for _ in 0..total_pad {
+                    out.insert(0, fill);
+                }
+            }
+        }
+    }
+
+    write!(dst, "{out}")?;
 
     Ok(())
 }
 
+fn get_precision_from_params<
+    'param,
+    'ident,
+    'formattable,
+    I: Iterator<Item = &'param Parameter<'ident, 'formattable>>,
+>(
+    precision: &Option<Precision>,
+    params: &'param [Parameter<'ident, 'formattable>],
+    params_iter: &mut I,
+) -> Result<Option<usize>>
+where
+    'ident: 'param,
+    'formattable: 'param,
+{
+    if let Some(precision) = precision {
+        let precision = match precision {
+            Precision::Star => params_iter.next().ok_or(FormatError::NotEnoughParameters)?,
+            Precision::Count(Count::Argument(a)) => find_parameter(a, params)?,
+            Precision::Count(Count::Integer(i)) => return Ok(Some(*i)),
+        };
+
+        let param = precision
+            .formattable
+            .try_as_usize()
+            .ok_or(FormatError::PrecisionNotUsize)?
+            .as_usize();
+
+        Ok(Some(param))
+    } else {
+        Ok(None)
+    }
+}
+
+fn get_width_from_params<'param, 'ident, 'formattable>(
+    format_spec: &FormatSpec,
+    params: &'param [Parameter<'ident, 'formattable>],
+) -> Result<Option<usize>>
+where
+    'ident: 'param,
+    'formattable: 'param,
+{
+    Ok(match &format_spec.width {
+        Some(w) => {
+            let param = match w {
+                Count::Argument(a) => find_parameter(a, params)?,
+                Count::Integer(i) => return Ok(Some(*i)),
+            };
+
+            Some(
+                param
+                    .formattable
+                    .try_as_usize()
+                    .ok_or(FormatError::WidthNotUsize)?
+                    .as_usize(),
+            )
+        }
+        None => None,
+    })
+}
+
+fn find_parameter<'param, 'ident, 'formattable>(
+    argument: &Argument,
+    parameters: &'param [Parameter<'ident, 'formattable>],
+) -> Result<&'param Parameter<'ident, 'formattable>> {
+    match argument {
+        Argument::Identifier(i) => parameters
+            .iter()
+            .find(|a| a.identifier == *i)
+            .ok_or_else(|| FormatError::NoNamedParameter(i.to_string())),
+        Argument::Integer(i) => parameters
+            .get(*i)
+            .ok_or(FormatError::NoPositionalParameter(*i)),
+    }
+}
+
+fn get_parameter_from_params<
+    'param,
+    'ident,
+    'formattable,
+    I: Iterator<Item = &'param Parameter<'ident, 'formattable>>,
+>(
+    argument: &Option<Argument>,
+    params: &'param [Parameter<'ident, 'formattable>],
+    params_iter: &mut I,
+) -> Result<&'param Parameter<'ident, 'formattable>>
+where
+    'ident: 'param,
+    'formattable: 'param,
+{
+    Ok(match argument {
+        None => params_iter.next().ok_or(FormatError::NotEnoughParameters)?,
+        Some(Argument::Identifier(i)) => params
+            .iter()
+            .find(|a| a.identifier == *i)
+            .ok_or_else(|| FormatError::NoNamedParameter(i.to_string()))?,
+        Some(Argument::Integer(i)) => params
+            .get(*i)
+            .ok_or(FormatError::NoPositionalParameter(*i))?,
+    })
+}
+
+/// Parses format `'{' [ argument ] [ ':' format_spec ] [ ws ] * '}'`
 fn parse_format(format: &str) -> Result<Format> {
     let (argument, format_spec) = format.split_once(':').unwrap_or((format, ""));
 
@@ -129,31 +281,58 @@ fn parse_format(format: &str) -> Result<Format> {
 
 #[cfg(test)]
 mod tests {
-    use crate::format::format;
+    use crate::format::rformat;
     use crate::prelude::*;
 
     #[test]
     fn format_parameters() {
-        let args = args![5, 6, 7];
+        let params = params![5, 6, 7];
 
-        assert_eq!("567", format("{}{}{}", &args).unwrap());
+        assert_eq!("567", rformat("{}{}{}", &params).unwrap());
     }
 
     #[test]
     fn format_positional_parameters() {
-        let args = args![5, 6, 7];
+        let params = params![5, 6, 7];
 
-        assert_eq!("765", format("{2}{1}{0}", &args).unwrap());
+        assert_eq!("765", rformat("{2}{1}{0}", &params).unwrap());
     }
 
     #[test]
     fn format_named_parameters() {
-        let arg_1 = 5;
-        let arg_2 = 6;
-        let arg_3 = 7;
+        let param_1 = 5;
+        let param_2 = 6;
+        let param_3 = 7;
 
-        let args = args![arg_1, arg_2, arg_3];
+        let params = params![param_1, param_2, param_3];
 
-        assert_eq!("657", format("{arg_2}{arg_1}{arg_3}", &args).unwrap());
+        assert_eq!(
+            "657",
+            rformat("{param_2}{param_1}{param_3}", &params).unwrap()
+        );
+
+        assert_eq!(format!("{:<5.2}", 0.123456789), "0.12 ");
+    }
+
+    #[test]
+    fn format_width() {
+        let width = 10;
+        let params = params![5, 6, 7, 3, width];
+
+        assert_eq!(
+            "    5  6         7",
+            rformat("{:5}{:3$}{:width$}", &params).unwrap()
+        );
+    }
+
+    #[test]
+    fn format_precision() {
+        let precision: usize = 3;
+        let params = params![123.456789, 2, precision];
+
+        assert_eq!(
+            "123.45679 123.46 123.457",
+            rformat("{0:.5} {0:.1$} {0:.precision$}", &params).unwrap()
+        );
     }
 }
