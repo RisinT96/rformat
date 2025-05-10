@@ -8,14 +8,14 @@ pub enum Argument<'f> {
 
 #[derive(Debug, PartialEq)]
 pub struct FormatSpec<'f> {
-    fill: Option<char>,
-    align: Option<Align>,
-    sign: Option<Sign>,
-    alternate: bool,
-    zero_pad: bool,
-    width: Option<Count<'f>>,
-    precision: Option<Precision<'f>>,
-    r#type: Type,
+    pub fill: char,
+    pub align: Align,
+    pub sign: Option<Sign>,
+    pub alternate: bool,
+    pub zero_pad: bool,
+    pub width: Option<Count<'f>>,
+    pub precision: Option<Precision<'f>>,
+    pub r#type: Type,
 }
 
 #[derive(Debug, PartialEq)]
@@ -58,13 +58,13 @@ pub enum Count<'f> {
     Integer(usize),
 }
 
-pub fn parse_format_spec(mut format_spec: &str) -> Result<FormatSpec> {
+pub fn parse_format_spec(format_spec: &str) -> Result<FormatSpec> {
     // Format spec found at https://doc.rust-lang.org/std/fmt/#syntax
 
-    let mut format_spec_substr = format_spec;
+    let mut format_spec_substr = format_spec.trim_end();
 
     // Parse fill and alignment
-    let (fill, align) = match (
+    let (mut fill, mut align) = match (
         format_spec_substr.chars().nth(0),
         format_spec_substr.chars().nth(1),
     ) {
@@ -119,6 +119,10 @@ pub fn parse_format_spec(mut format_spec: &str) -> Result<FormatSpec> {
     // Skip zero pad character
     if zero_pad {
         format_spec_substr = &format_spec_substr[1..];
+
+        // zero-pad overrides the fill character and alignment flags
+        fill = Some('0');
+        align = Some(Align::Right);
     }
 
     // Parse width
@@ -185,8 +189,9 @@ pub fn parse_format_spec(mut format_spec: &str) -> Result<FormatSpec> {
     let r#type = parse_type(format_spec_substr)?;
 
     Ok(FormatSpec {
-        fill,
-        align,
+        // Default behavior
+        fill: fill.unwrap_or(' '),
+        align: align.unwrap_or(Align::Right),
         sign,
         alternate,
         zero_pad,
@@ -252,8 +257,8 @@ mod tests {
     fn test_empty_format_spec() {
         let spec = parse_format_spec("").unwrap();
 
-        assert_eq!(spec.fill, None);
-        assert_eq!(spec.align, None);
+        assert_eq!(spec.fill, ' ');
+        assert_eq!(spec.align, Align::Right);
         assert_eq!(spec.sign, None);
         assert!(!spec.alternate);
         assert!(!spec.zero_pad);
@@ -266,33 +271,33 @@ mod tests {
     fn test_fill_and_align() {
         // Left align with _ as fill character
         let spec = parse_format_spec("_<").unwrap();
-        assert_eq!(spec.fill, Some('_'));
-        assert_eq!(spec.align, Some(Align::Left));
+        assert_eq!(spec.fill, '_');
+        assert_eq!(spec.align, Align::Left);
 
         // Center align with space as fill character
         let spec = parse_format_spec(" ^").unwrap();
-        assert_eq!(spec.fill, Some(' '));
-        assert_eq!(spec.align, Some(Align::Center));
+        assert_eq!(spec.fill, ' ');
+        assert_eq!(spec.align, Align::Center);
 
         // Right align with 0 as fill character
         let spec = parse_format_spec("0>").unwrap();
-        assert_eq!(spec.fill, Some('0'));
-        assert_eq!(spec.align, Some(Align::Right));
+        assert_eq!(spec.fill, '0');
+        assert_eq!(spec.align, Align::Right);
 
         // Left align without fill character
         let spec = parse_format_spec("<").unwrap();
-        assert_eq!(spec.fill, None);
-        assert_eq!(spec.align, Some(Align::Left));
+        assert_eq!(spec.fill, ' ');
+        assert_eq!(spec.align, Align::Left);
 
         // Center align without fill character
         let spec = parse_format_spec("^").unwrap();
-        assert_eq!(spec.fill, None);
-        assert_eq!(spec.align, Some(Align::Center));
+        assert_eq!(spec.fill, ' ');
+        assert_eq!(spec.align, Align::Center);
 
         // Right align without fill character
         let spec = parse_format_spec(">").unwrap();
-        assert_eq!(spec.fill, None);
-        assert_eq!(spec.align, Some(Align::Right));
+        assert_eq!(spec.fill, ' ');
+        assert_eq!(spec.align, Align::Right);
     }
 
     #[test]
@@ -432,11 +437,25 @@ mod tests {
 
     #[test]
     fn test_combined_format_specs() {
-        // Fill, align, sign, alternate, zero pad, width, precision, type
-        let spec = parse_format_spec("_>+#010.5x").unwrap();
+        // Fill, align, sign, alternate, zero pad, width, precision, type, ws at end ignored
+        let spec = parse_format_spec("a^10.5x    ").unwrap();
 
-        assert_eq!(spec.fill, Some('_'));
-        assert_eq!(spec.align, Some(Align::Right));
+        // fill and align overridden by zero pad
+        assert_eq!(spec.fill, 'a');
+        assert_eq!(spec.align, Align::Center);
+        assert_eq!(spec.sign, None);
+        assert!(!spec.alternate);
+        assert!(!spec.zero_pad);
+        assert_eq!(spec.width, Some(Count::Integer(10)));
+        assert_eq!(spec.precision, Some(Precision::Count(Count::Integer(5))));
+        assert_eq!(spec.r#type, Type::LowerHex);
+
+        // Fill, align, sign, alternate, zero pad, width, precision, type, ws at end ignored
+        let spec = parse_format_spec("_>+#010.5x    ").unwrap();
+
+        // fill and align overridden by zero pad
+        assert_eq!(spec.fill, '0');
+        assert_eq!(spec.align, Align::Right);
         assert_eq!(spec.sign, Some(Sign::Plus));
         assert!(spec.alternate);
         assert!(spec.zero_pad);
@@ -447,7 +466,7 @@ mod tests {
         // Left align with identifier argument width and identifier argument precision
         let spec = parse_format_spec("<width$.prec$?").unwrap();
 
-        assert_eq!(spec.align, Some(Align::Left));
+        assert_eq!(spec.align, Align::Left);
         assert_eq!(
             spec.width,
             Some(Count::Argument(Argument::Identifier("width")))
