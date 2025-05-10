@@ -7,9 +7,13 @@ pub enum FormatError {
     #[error("Format error: {0}")]
     FmtError(#[from] std::fmt::Error),
     #[error("Unescaped closing brace without opening brace, at index {0} in '{1}'")]
-    Closing(usize, String),
-    #[error("Parameter requested at index {0} in '{1}', but no argument provided")]
-    MissingArgument(usize, String),
+    ClosingParentheses(usize, String),
+    #[error("Parameter requested at index {0} in '{1}', but not provided")]
+    NoParameter(usize, String),
+    #[error("Positional parameter requested ({0}) but not provided")]
+    NoPositionalParameter(usize),
+    #[error("Named parameter requested ({0}) but not provided")]
+    NoNamedParameter(String),
     #[error("Failed to parse integer: {0}")]
     InvalidInteger(#[from] core::num::ParseIntError),
     #[error("Invalid format spec, expected format type in '{full}', found: '{substr}'")]
