@@ -7,7 +7,9 @@ license = "GPL-3.0"
 name = "rformat"
 repository = "https://github.com/RisinT96/rformat"
 version = "0.1.0"
+rust-version = "1.86.0"
 
 [dependencies]
 paste = "1.0.15"
 thiserror = "2.0.12"
+trait_mux = { version = "0.1.0", path = "../trait-mux/trait_mux/" }
