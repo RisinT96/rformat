@@ -105,14 +105,14 @@ dependencies = [
 
 [[package]]
 name = "trait_mux"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "trait_mux_macros",
 ]
 
 [[package]]
 name = "trait_mux_macros"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "convert_case",
  "proc-macro-error",

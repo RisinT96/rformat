@@ -26,5 +26,3 @@ trait_mux!(Formattable {
     UpperHex,
     Usize,
 });
-
-pub use into_formattable;

@@ -6,8 +6,10 @@ pub type Result<T> = core::result::Result<T, FormatError>;
 pub enum FormatError {
     #[error("Format error: {0}")]
     FmtError(#[from] std::fmt::Error),
+    #[error("Unescaped opening brace without closing brace, at index {0} in '{1}'")]
+    UnmatchedOpeningBrace(usize, String),
     #[error("Unescaped closing brace without opening brace, at index {0} in '{1}'")]
-    ClosingParentheses(usize, String),
+    UnmatchedClosingBrace(usize, String),
     #[error("Requested more parameters than provided!")]
     NotEnoughParameters,
     #[error("Positional parameter requested ({0}) but not provided")]
@@ -24,4 +26,6 @@ pub enum FormatError {
     PrecisionNotUsize,
     #[error("Parameter passed as width is not of type usize")]
     WidthNotUsize,
+    #[error("Parameter {0} does not implement trait {1}")]
+    TraitNotImplemented(String, &'static str),
 }

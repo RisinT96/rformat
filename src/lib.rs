@@ -1,5 +1,5 @@
 pub mod error;
-pub mod format;
+pub mod fmt;
 pub mod formattable;
 pub mod prelude;
 

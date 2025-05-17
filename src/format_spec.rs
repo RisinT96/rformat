@@ -64,7 +64,7 @@ pub fn parse_format_spec(format_spec: &str) -> Result<FormatSpec> {
     let mut format_spec_substr = format_spec.trim_end();
 
     // Parse fill and alignment
-    let (mut fill, mut align) = match (
+    let (fill, align) = match (
         format_spec_substr.chars().next(),
         format_spec_substr.chars().nth(1),
     ) {
@@ -113,10 +113,6 @@ pub fn parse_format_spec(format_spec: &str) -> Result<FormatSpec> {
     // Skip zero pad character
     if zero_pad {
         format_spec_substr = &format_spec_substr[1..];
-
-        // zero-pad overrides the fill character and alignment flags
-        fill = Some('0');
-        align = Some(Align::Right);
     }
 
     // Parse width
@@ -448,7 +444,7 @@ mod tests {
         let spec = parse_format_spec("_>+#010.5x    ").unwrap();
 
         // fill and align overridden by zero pad
-        assert_eq!(spec.fill, '0');
+        assert_eq!(spec.fill, '_');
         assert_eq!(spec.align, Align::Right);
         assert_eq!(spec.sign, Some(Sign::Plus));
         assert!(spec.alternate);
