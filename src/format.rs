@@ -1,5 +1,5 @@
 use crate::error::{FormatError, Result};
-use crate::format_spec::{self, Argument, Count, FormatSpec, Precision};
+use crate::format_spec::{self, Align, Argument, Count, FormatSpec, Precision, Sign};
 use crate::prelude::*;
 
 pub struct Parameter<'ident, 'formattable> {
@@ -115,43 +115,83 @@ where
         .try_as_display()
         .ok_or(std::fmt::Error)?;
 
-    let mut out = match precision {
-        None => format!("{}", as_display),
-        Some(p) => format!("{:.p$}", as_display),
+    let out = match (&format_spec.align, &format_spec.sign, format_spec.alternate, format_spec.zero_pad, precision) {
+        (Align::Left, None, true, true, None) => format!("{:<#0width$}", as_display),
+        (Align::Left, None, true, true, Some(p)) => format!("{:<#0width$.p$}", as_display),
+        (Align::Left, None, true, false, None) => format!("{:\u{001A}<#width$}", as_display),
+        (Align::Left, None, true, false, Some(p)) => format!("{:\u{001A}<#width$.p$}", as_display),
+        (Align::Left, None, false, true, None) => format!("{:<0width$}", as_display),
+        (Align::Left, None, false, true, Some(p)) => format!("{:<0width$.p$}", as_display),
+        (Align::Left, None, false, false, None) => format!("{:\u{001A}<width$}", as_display),
+        (Align::Left, None, false, false, Some(p)) => format!("{:\u{001A}<width$.p$}", as_display),
+        (Align::Left, Some(Sign::Plus), true, true, None) => format!("{:<+#0width$}", as_display),
+        (Align::Left, Some(Sign::Minus), true, true, None) => format!("{:<-#0width$}", as_display),
+        (Align::Left, Some(Sign::Plus), true, true, Some(p)) => format!("{:<+#0width$.p$}", as_display),
+        (Align::Left, Some(Sign::Minus), true, true, Some(p)) => format!("{:<-#0width$.p$}", as_display),
+        (Align::Left, Some(Sign::Plus), true, false, None) => format!("{:\u{001A}<+#width$}", as_display),
+        (Align::Left, Some(Sign::Minus), true, false, None) => format!("{:\u{001A}<-#width$}", as_display),
+        (Align::Left, Some(Sign::Plus), true, false, Some(p)) => format!("{:\u{001A}<+#width$.p$}", as_display),
+        (Align::Left, Some(Sign::Minus), true, false, Some(p)) => format!("{:\u{001A}<-#width$.p$}", as_display),
+        (Align::Left, Some(Sign::Plus), false, true, None) => format!("{:<+0width$}", as_display),
+        (Align::Left, Some(Sign::Minus), false, true, None) => format!("{:<-0width$}", as_display),
+        (Align::Left, Some(Sign::Plus), false, true, Some(p)) => format!("{:<+0width$.p$}", as_display),
+        (Align::Left, Some(Sign::Minus), false, true, Some(p)) => format!("{:<-0width$.p$}", as_display),
+        (Align::Left, Some(Sign::Plus), false, false, None) => format!("{:\u{001A}<+width$}", as_display),
+        (Align::Left, Some(Sign::Minus), false, false, None) => format!("{:\u{001A}<-width$}", as_display),
+        (Align::Left, Some(Sign::Plus), false, false, Some(p)) => format!("{:\u{001A}<+width$.p$}", as_display),
+        (Align::Left, Some(Sign::Minus), false, false, Some(p)) => format!("{:\u{001A}<-width$.p$}", as_display),
+        (Align::Center, None, true, true, None) => format!("{:^#0width$}", as_display),
+        (Align::Center, None, true, true, Some(p)) => format!("{:^#0width$.p$}", as_display),
+        (Align::Center, None, true, false, None) => format!("{:\u{001A}^#width$}", as_display),
+        (Align::Center, None, true, false, Some(p)) => format!("{:\u{001A}^#width$.p$}", as_display),
+        (Align::Center, None, false, true, None) => format!("{:^0width$}", as_display),
+        (Align::Center, None, false, true, Some(p)) => format!("{:^0width$.p$}", as_display),
+        (Align::Center, None, false, false, None) => format!("{:\u{001A}^width$}", as_display),
+        (Align::Center, None, false, false, Some(p)) => format!("{:\u{001A}^width$.p$}", as_display),
+        (Align::Center, Some(Sign::Plus), true, true, None) => format!("{:^+#0width$}", as_display),
+        (Align::Center, Some(Sign::Minus), true, true, None) => format!("{:^-#0width$}", as_display),
+        (Align::Center, Some(Sign::Plus), true, true, Some(p)) => format!("{:^+#0width$.p$}", as_display),
+        (Align::Center, Some(Sign::Minus), true, true, Some(p)) => format!("{:^-#0width$.p$}", as_display),
+        (Align::Center, Some(Sign::Plus), true, false, None) => format!("{:\u{001A}^+#width$}", as_display),
+        (Align::Center, Some(Sign::Minus), true, false, None) => format!("{:\u{001A}^-#width$}", as_display),
+        (Align::Center, Some(Sign::Plus), true, false, Some(p)) => format!("{:\u{001A}^+#width$.p$}", as_display),
+        (Align::Center, Some(Sign::Minus), true, false, Some(p)) => format!("{:\u{001A}^-#width$.p$}", as_display),
+        (Align::Center, Some(Sign::Plus), false, true, None) => format!("{:^+0width$}", as_display),
+        (Align::Center, Some(Sign::Minus), false, true, None) => format!("{:^-0width$}", as_display),
+        (Align::Center, Some(Sign::Plus), false, true, Some(p)) => format!("{:^+0width$.p$}", as_display),
+        (Align::Center, Some(Sign::Minus), false, true, Some(p)) => format!("{:^-0width$.p$}", as_display),
+        (Align::Center, Some(Sign::Plus), false, false, None) => format!("{:\u{001A}^+width$}", as_display),
+        (Align::Center, Some(Sign::Minus), false, false, None) => format!("{:\u{001A}^-width$}", as_display),
+        (Align::Center, Some(Sign::Plus), false, false, Some(p)) => format!("{:\u{001A}^+width$.p$}", as_display),
+        (Align::Center, Some(Sign::Minus), false, false, Some(p)) => format!("{:\u{001A}^-width$.p$}", as_display),
+        (Align::Right, None, true, true, None) => format!("{:>#0width$}", as_display),
+        (Align::Right, None, true, true, Some(p)) => format!("{:>#0width$.p$}", as_display),
+        (Align::Right, None, true, false, None) => format!("{:\u{001A}>#width$}", as_display),
+        (Align::Right, None, true, false, Some(p)) => format!("{:\u{001A}>#width$.p$}", as_display),
+        (Align::Right, None, false, true, None) => format!("{:>0width$}", as_display),
+        (Align::Right, None, false, true, Some(p)) => format!("{:>0width$.p$}", as_display),
+        (Align::Right, None, false, false, None) => format!("{:\u{001A}>width$}", as_display),
+        (Align::Right, None, false, false, Some(p)) => format!("{:\u{001A}>width$.p$}", as_display),
+        (Align::Right, Some(Sign::Plus), true, true, None) => format!("{:>+#0width$}", as_display),
+        (Align::Right, Some(Sign::Minus), true, true, None) => format!("{:>-#0width$}", as_display),
+        (Align::Right, Some(Sign::Plus), true, true, Some(p)) => format!("{:>+#0width$.p$}", as_display),
+        (Align::Right, Some(Sign::Minus), true, true, Some(p)) => format!("{:>-#0width$.p$}", as_display),
+        (Align::Right, Some(Sign::Plus), true, false, None) => format!("{:\u{001A}>+#width$}", as_display),
+        (Align::Right, Some(Sign::Minus), true, false, None) => format!("{:\u{001A}>-#width$}", as_display),
+        (Align::Right, Some(Sign::Plus), true, false, Some(p)) => format!("{:\u{001A}>+#width$.p$}", as_display),
+        (Align::Right, Some(Sign::Minus), true, false, Some(p)) => format!("{:\u{001A}>-#width$.p$}", as_display),
+        (Align::Right, Some(Sign::Plus), false, true, None) => format!("{:>+0width$}", as_display),
+        (Align::Right, Some(Sign::Minus), false, true, None) => format!("{:>-0width$}", as_display),
+        (Align::Right, Some(Sign::Plus), false, true, Some(p)) => format!("{:>+0width$.p$}", as_display),
+        (Align::Right, Some(Sign::Minus), false, true, Some(p)) => format!("{:>-0width$.p$}", as_display),
+        (Align::Right, Some(Sign::Plus), false, false, None) => format!("{:\u{001A}>+width$}", as_display),
+        (Align::Right, Some(Sign::Minus), false, false, None) => format!("{:\u{001A}>-width$}", as_display),
+        (Align::Right, Some(Sign::Plus), false, false, Some(p)) => format!("{:\u{001A}>+width$.p$}", as_display),
+        (Align::Right, Some(Sign::Minus), false, false, Some(p)) => format!("{:\u{001A}>-width$.p$}", as_display),
     };
 
-    // Handle width + fill + alignment
-    if width > out.len() {
-        let total_pad = width - out.len();
-        let fill = format.format_spec.fill;
-
-        match format.format_spec.align {
-            format_spec::Align::Left => {
-                // Pad on the right
-                for _ in 0..total_pad {
-                    out.push(fill);
-                }
-            }
-            format_spec::Align::Center => {
-                // Pad equally on both sides (left gets extra if odd)
-                let left_pad = (total_pad / 2) + (total_pad % 2);
-                let right_pad = total_pad / 2;
-
-                for _ in 0..left_pad {
-                    out.insert(0, fill);
-                }
-                for _ in 0..right_pad {
-                    out.push(fill);
-                }
-            }
-            format_spec::Align::Right => {
-                // Pad on the left
-                for _ in 0..total_pad {
-                    out.insert(0, fill);
-                }
-            }
-        }
-    }
+    let mut fill = [0;4];
+    let out = out.replace("\u{001A}", format_spec.fill.encode_utf8(&mut fill));
 
     write!(dst, "{out}")?;
 
