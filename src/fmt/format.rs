@@ -593,7 +593,7 @@ mod tests {
 
         // Width and precision together
         assert_format!("{:6.2}", float);
-        // assert_format!("{:6.3}", string);
+        assert_format!("{:<6.3}", string);
 
         // Dynamic precision
         let precision = 2;
@@ -726,5 +726,14 @@ mod tests {
         let param_ref = &param;
 
         assert_format!("{:p}", param_ref);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_exception() {
+        // Only place where rformat differs from format is in the default alignment of non-numerics.
+        // rformat defaults to right-aligned, for both numeric and non-numeric formatters.
+        // while fmt uses left-aligned formatting for non-numeric types.
+        assert_format!("{:6.3}", "hi");
     }
 }
