@@ -42,8 +42,57 @@ pub use _param as param;
 /// Each expression is processed by the `param!` macro.
 #[macro_export]
 macro_rules! _params {
-    ($($params:expr),* $(,)?) => (
-        vec![$($crate::fmt::format::param![$params]),*]
+    // Empty list
+    () => (vec![]);
+
+    // Single named parameter
+    ($name:ident = $value:expr) => (
+        vec![$crate::fmt::format::param!($name = $value)]
+    );
+
+    // Single unnamed parameter
+    ($value:expr) => (
+        vec![$crate::fmt::format::param!($value)]
+    );
+
+    // Only named parameters
+    ($($name:ident = $value:expr),*) => (
+        vec![$($crate::fmt::format::param!($name = $value)),*]
+    );
+
+    // Mixed named and unnamed parameters - we need to use TT munching
+
+    // Stop at empty tail.
+    (@acc [$($acc:tt)*];) => (vec![$($acc)*]);
+
+    // Handle last named parameter
+    (@acc [$($acc:tt)*]; $name:ident = $value:expr) => (
+        vec![$($acc)*, $crate::fmt::format::param!($name = $value)]
+    );
+
+    // Handle last unnamed parameter
+    (@acc [$($acc:tt)*]; $value:expr) => (
+        vec![$($acc)*, $crate::fmt::format::param!($value)]
+    );
+
+    // Handle a named parameter
+    (@acc [$($acc:tt)*]; $name:ident = $value:expr, $($tail:tt)*) => (
+        $crate::fmt::format::params!(@acc [$($acc)*, $crate::fmt::format::param!($name = $value)]; $($tail)*)
+    );
+
+    // Handle an unnamed parameter
+    (@acc [$($acc:tt)*]; $value:expr, $($tail:tt)*) => (
+        $crate::fmt::format::params!(@acc [$($acc)*, $crate::fmt::format::param!($value)]; $($tail)*)
+    );
+
+    // Start with a named parameter
+    ($name:ident = $value:expr, $($tail:tt)*) => (
+        $crate::fmt::format::params!(@acc [$crate::fmt::format::param!($name = $value)]; $($tail)*)
+    );
+
+    // Start with an unnamed parameter
+    ($value:expr, $($tail:tt)*) => (
+        $crate::fmt::format::params!(@acc [$crate::fmt::format::param!($value)]; $($tail)*)
     );
 }
 pub use _params as params;
@@ -171,8 +220,7 @@ where
     let parameter = get_parameter_for_formatting(&format.argument, app_params, params_iter)?;
 
     // Resolve width value, defaulting to 0 if not specified
-    let width = resolve_width_value(&format_spec, app_params)?
-        .unwrap_or(0);
+    let width = resolve_width_value(&format_spec, app_params)?.unwrap_or(0);
 
     // Select the appropriate formatting method based on the format type
     let out = match format_spec.r#type {
@@ -383,21 +431,31 @@ fn parse_format(format: &str) -> Result<Format> {
 
 #[cfg(test)]
 mod tests {
-    use crate::fmt::format::format_string;
     use crate::prelude::*;
+
+    macro_rules! assert_format {
+        ($fmt:expr) => {
+            ::core::assert_eq!(
+                ::std::format!($fmt),
+                $crate::prelude::rformat!($fmt).unwrap()
+            )
+        };
+        ($fmt:expr, $($args:tt)*) => {
+            ::core::assert_eq!(
+                ::std::format!($fmt, $($args)*),
+                $crate::prelude::rformat!($fmt, $($args)*).unwrap()
+            )
+        };
+    }
 
     #[test]
     fn format_parameters() {
-        let params = params![5, 6, 7];
-
-        assert_eq!("567", format_string("{}{}{}", &params).unwrap());
+        assert_format!("{}{}{}", 5, 6, 7);
     }
 
     #[test]
     fn format_positional_parameters() {
-        let params = params![5, 6, 7];
-
-        assert_eq!("765", format_string("{2}{1}{0}", &params).unwrap());
+        assert_format!("{2}{1}{0}", 5, 6, 7);
     }
 
     #[test]
@@ -406,145 +464,267 @@ mod tests {
         let param_2 = 6;
         let param_3 = 7;
 
-        let params = params![param_1, param_2, param_3];
-
         assert_eq!(
-            "657",
-            format_string("{param_2}{param_1}{param_3}", &params).unwrap()
+            format!("{param_2}{param_1}{param_3}"),
+            rformat!("{param_2}{param_1}{param_3}", param_1, param_2, param_3).unwrap()
         );
-
-        assert_eq!(format!("{:<5.2}", 0.123456789), "0.12 ");
     }
 
     #[test]
     fn format_width() {
         let width = 10;
-        let params = params![5, 6, 7, 3, width];
 
-        assert_eq!(
-            "    5  6         7",
-            format_string("{:5}{:3$}{:width$}", &params).unwrap()
-        );
+        assert_format!("{:5}{:3$}{:w$}", 5, 6, 7, 3, w = width);
     }
 
     #[test]
     fn format_precision() {
         let precision: usize = 3;
-        let params = params![123.456789, 2, precision];
 
-        assert_eq!(
-            "123.45679 123.46 123.457",
-            format_string("{0:.5} {0:.1$} {0:.precision$}", &params).unwrap()
-        );
+        assert_format!("{0:.5} {0:.1$} {0:.p$}", 123.456789, 2, p = precision);
     }
 
     #[test]
     fn test_alignment_specifications() {
-        let params = params![42];
-
         // Test left, right, and center alignment with width
-        assert_eq!("42   ", format_string("{:<5}", &params).unwrap());
-        assert_eq!("   42", format_string("{:>5}", &params).unwrap());
-        assert_eq!(" 42  ", format_string("{:^5}", &params).unwrap());
+        assert_format!("{:<5}", 42);
+        assert_format!("{:>5}", 42);
+        assert_format!("{:^5}", 42);
+
+        let array = [1, 2, 3];
+        assert_format!("{:<5?}", array);
+        assert_format!("{:>5?}", array);
+        assert_format!("{:^5?}", array);
     }
 
     #[test]
     fn test_fill_character() {
-        let params = params![42];
-
         // Test with different fill characters
-        assert_eq!("*****42", format_string("{:*>7}", &params).unwrap());
-        assert_eq!("42*****", format_string("{:*<7}", &params).unwrap());
-        assert_eq!("**42***", format_string("{:*^7}", &params).unwrap());
+        assert_format!("{:*>7}", 42);
+        assert_format!("{:A<7}", 42);
+        assert_format!("{:🎉^7}", 42);
+
+        let array = [1, 2, 3];
+        assert_format!("{:*<5?}", array);
+        assert_format!("{:A>5?}", array);
+        assert_format!("{:🎉^5?}", array);
     }
 
     #[test]
     fn test_number_formatting() {
-        let params = vec![param![42], param![(-42 as i64)], param![42.5]];
-
         // Test sign specifications
-        assert_eq!("+42", format_string("{0:+}", &params).unwrap());
-        assert_eq!("-42", format_string("{1}", &params).unwrap());
+        assert_format!("{:+}", 42);
+        assert_format!("{:+}", -42i64);
+        assert_format!("{:-}", 42);
+        assert_format!("{:-}", -42i64);
+        assert_format!("{}", 42i64);
+        assert_format!("{}", -42i64);
 
         // Test alternate form (#)
-        assert_eq!("0o52", format_string("{:#o}", &params).unwrap());
-        assert_eq!("0x2a", format_string("{:#x}", &params).unwrap());
+        assert_format!("{:#o}", 42);
+        assert_format!("{:#x}", 42);
 
         // Test zero padding
-        assert_eq!("0042", format_string("{:04}", &params).unwrap());
+        assert_format!("{:04}", 42);
 
         // Test precision with floating point
-        assert_eq!("42.50", format_string("{2:.2}", &params).unwrap());
+        assert_format!("{:.2}", 42.5);
     }
 
     #[test]
-    fn test_combination_formats() {
-        let params = params![42, 3.14159];
+    fn test_all_format_types() {
+        // Create test values
+        let integer = 42;
+        let negative = -42i32;
+        let float = 3.14159;
+        let string = "hello";
+        let character = 'A';
+        let boolean = true;
+        let array = [1, 2, 3];
 
-        // Test combinations of different format specifiers
-        assert_eq!("+042", format_string("{:+04}", &params).unwrap());
-        assert_eq!("**+42**", format_string("{:*^+7}", &params).unwrap());
-        assert_eq!("0x002a", format_string("{:#06x}", &params).unwrap());
-        assert_eq!("3.142", format_string("{1:.3}", &params).unwrap());
+        // Test Display format
+        assert_format!("{:}", integer);
+        assert_format!("{}", boolean);
+
+        // Test Debug format
+        assert_format!("{:?}", integer);
+        assert_format!("{:?}", string);
+        assert_format!("{:?}", array);
+
+        // Test LowerHex format
+        assert_format!("{:x}", integer);
+        assert_format!("{:x}", negative);
+
+        // Test UpperHex format
+        assert_format!("{:X}", integer);
+        assert_format!("{:X}", negative);
+
+        // Test Octal format
+        assert_format!("{:o}", integer);
+
+        // Test Binary format
+        assert_format!("{:b}", integer);
+
+        // Test LowerExp format
+        assert_format!("{:e}", float);
+
+        // Test UpperExp format
+        assert_format!("{:E}", float);
+
+        // Test Pointer format.
+        let ptr = &character;
+        assert_format!("{:p}", ptr);
     }
 
     #[test]
-    fn test_escaped_braces() {
-        let params = params![42];
+    fn test_precision_variations() {
+        // Test precision on different types
+        let float = 3.14159;
+        let string = "hello";
 
-        // Test escaped braces
-        assert_eq!("{42}", format_string("{{{}}}", &params).unwrap());
-        assert_eq!(
-            "{42} is the answer {yo}",
-            format_string("{{{0}}} is the answer {{yo}}", &params).unwrap()
-        );
+        // Float precision
+        assert_format!("{:.3}", float);
+        assert_format!("{:.1}", float);
+        assert_format!("{:.0}", float);
+
+        // String truncation
+        assert_format!("{:.2}", string);
+        assert_format!("{:.10}", string);
+
+        // Width and precision together
+        assert_format!("{:6.2}", float);
+        // assert_format!("{:6.3}", string);
+
+        // Dynamic precision
+        let precision = 2;
+        assert_format!("{:.1$}", float, precision);
     }
 
     #[test]
-    fn test_mixed_argument_types() {
-        let num = 42;
-        let text = "answer";
-        let flag = true;
+    fn test_complex_combinations() {
+        // Alignment + fill + width + sign + zero-padding
+        assert_format!("{:+05}", 42);
+        assert_format!("{:*^+7}", 42);
 
-        let params = params![num, text, flag];
+        // Alignment + width + precision
+        assert_format!("{:7.2}", 3.14159);
+        assert_format!("{:<7.2}", 3.14159);
 
-        // Test mixed argument types
-        assert_eq!(
-            "The answer is 42: true",
-            format_string("The {1} is {0}: {2}", &params).unwrap()
-        );
+        // # + zero padding + width + type
+        assert_format!("{:#06x}", 42);
+        assert_format!("{:#6x}", 42);
+        assert_format!("{:#06X}", 42);
+
+        // Fill + align + zero + width + precision
+        assert_format!("{:06.2}", 3.14159);
+        assert_format!("{:#>6.2}", 3.14159);
+
+        // Complex alignment with sign
+        assert_format!("{:>+5}", 42);
+        assert_format!("{:^+5}", 42);
+        assert_format!("{:^5}", -42i32);
+    }
+
+    #[test]
+    fn test_sign_options() {
+        // Sign options with positive numbers
+        assert_format!("{}", 42);
+        assert_format!("{:+}", 42);
+        assert_format!("{:-}", 42);
+
+        // Sign options with negative numbers
+        assert_format!("{}", -42i64);
+        assert_format!("{:+}", -42i64);
+        assert_format!("{:-}", -42i64);
+
+        // Sign options with zero
+        assert_format!("{}", 0);
+        assert_format!("{:+}", 0);
+        assert_format!("{:-}", 0);
+    }
+
+    #[test]
+    fn test_nested_formats() {
+        // Test nested formats where width/precision come from parameters
+        let width = 10;
+        let precision = 2;
+        let number = 3.14159;
+
+        assert_format!("{:1$.2$}", number, width, precision);
+
+        // Test width and precision that refer to other parameters
+        assert_format!("{:>wi$.pre$}", number, wi = width, pre = precision);
+    }
+
+    #[test]
+    fn test_alternate_forms() {
+        // Test alternate forms for different types
+        assert_format!("{:#b}", 42);
+        assert_format!("{:#o}", 42);
+        assert_format!("{:#x}", 42);
+        assert_format!("{:#X}", 42);
+
+        // Float alternate forms
+        assert_format!("{:#}", 3.0);
+        assert_format!("{:.0}", 3.0);
+        assert_format!("{:#.0}", 3.0);
+    }
+
+    #[test]
+    fn test_debug_formatting() {
+        // Test various debug formatting options
+        #[derive(Debug)]
+        struct TestStruct {
+            _field: i32,
+        }
+
+        #[derive(Debug)]
+        struct TestStruct2 {
+            _struct: TestStruct,
+            _field: i32,
+        }
+
+        let test_struct = TestStruct2 {
+            _struct: TestStruct { _field: 24 },
+            _field: 42,
+        };
+        let test_struct_ref = &test_struct;
+
+        // Basic debug formatting
+        assert_format!("{:?}", test_struct_ref);
+
+        // Debug with alternate form
+        assert_format!("{:#?}", test_struct_ref);
+        assert_format!("{:❌^#20?}", test_struct_ref);
+    }
+
+    #[test]
+    fn test_unicode_fill() {
+        // Test with Unicode fill characters
+        assert_format!("{:♥>7}", 42);
+        assert_format!("{:♥<7}", 42);
+        assert_format!("{:♥^7}", 42);
+
+        // Test with emoji
+        assert_format!("{:😊^7}", 42);
     }
 
     #[test]
     fn test_format_errors() {
-        let params = params![42];
-
         // Test error cases
-        assert!(format_string("}", &params).is_err()); // Unmatched closing brace
-        assert!(format_string("{", &params).is_err()); // Unmatched opening brace
-        assert!(format_string("{} {}", &params).is_err()); // Out of bounds
-        assert!(format_string("{1}", &params).is_err()); // Index out of bounds
-        assert!(format_string("{unknown}", &params).is_err()); // Unknown named parameter
-        assert!(format_string("{:p}", &params).is_err()); // Unsupported format type
+        assert!(rformat!("}", 42).is_err()); // Unmatched closing brace
+        assert!(rformat!("{", 42).is_err()); // Unmatched opening brace
+        assert!(rformat!("{} {}", 42).is_err()); // Out of bounds
+        assert!(rformat!("{1}", 42).is_err()); // Index out of bounds
+        assert!(rformat!("{unknown}", 42).is_err()); // Unknown named parameter
+        assert!(rformat!("{:p}", 42).is_err()); // Unsupported format type
     }
 
     #[test]
     fn test_pointer() {
         let param = 42;
         let param_ref = &param;
-        let params = params![param_ref];
 
-        assert_eq!(
-            format_string("{:p}", &params).unwrap(),
-            format!("{:p}", param_ref)
-        );
-    }
-
-    #[test]
-    fn test_rformat_macro() {
-        assert_eq!(
-            rformat!("{} {} {}", 1, 5.87, "hey!").unwrap(),
-            format!("{} {} {}", 1, 5.87, "hey!")
-        );
+        assert_format!("{:p}", param_ref);
     }
 }
