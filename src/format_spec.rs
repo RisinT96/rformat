@@ -79,7 +79,7 @@ pub fn parse_format_spec(format_spec: &str) -> Result<FormatSpec> {
 
     // Skip fill character
     if fill.is_some() {
-        format_spec_substr = &format_spec_substr[1..];
+        format_spec_substr = &format_spec_substr[fill.unwrap().len_utf8()..];
     }
 
     // Skip align character
