@@ -682,7 +682,7 @@ struct PointerWrapper<'p> {
     pointer: &'p dyn std::fmt::Pointer,
 }
 
-impl<'p> std::fmt::Pointer for PointerWrapper<'p> {
+impl std::fmt::Pointer for PointerWrapper<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.pointer.fmt(f)
     }

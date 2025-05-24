@@ -43,36 +43,36 @@ pub use _param as param;
 #[macro_export]
 macro_rules! _params {
     // Empty list
-    () => (vec![]);
+    () => ([]);
 
     // Single named parameter
     ($name:ident = $value:expr) => (
-        vec![$crate::fmt::format::param!($name = $value)]
+        [$crate::fmt::format::param!($name = $value)]
     );
 
     // Single unnamed parameter
     ($value:expr) => (
-        vec![$crate::fmt::format::param!($value)]
+        [$crate::fmt::format::param!($value)]
     );
 
     // Only named parameters
     ($($name:ident = $value:expr),*) => (
-        vec![$($crate::fmt::format::param!($name = $value)),*]
+        [$($crate::fmt::format::param!($name = $value)),*]
     );
 
     // Mixed named and unnamed parameters - we need to use TT munching
 
     // Stop at empty tail.
-    (@acc [$($acc:tt)*];) => (vec![$($acc)*]);
+    (@acc [$($acc:tt)*];) => ([$($acc)*]);
 
     // Handle last named parameter
     (@acc [$($acc:tt)*]; $name:ident = $value:expr) => (
-        vec![$($acc)*, $crate::fmt::format::param!($name = $value)]
+        [$($acc)*, $crate::fmt::format::param!($name = $value)]
     );
 
     // Handle last unnamed parameter
     (@acc [$($acc:tt)*]; $value:expr) => (
-        vec![$($acc)*, $crate::fmt::format::param!($value)]
+        [$($acc)*, $crate::fmt::format::param!($value)]
     );
 
     // Handle a named parameter
@@ -220,7 +220,7 @@ where
     let parameter = get_parameter_for_formatting(&format.argument, app_params, params_iter)?;
 
     // Resolve width value, defaulting to 0 if not specified
-    let width = resolve_width_value(&format_spec, app_params)?.unwrap_or(0);
+    let width = resolve_width_value(format_spec, app_params)?.unwrap_or(0);
 
     // Select the appropriate formatting method based on the format type
     let out = match format_spec.r#type {
@@ -431,6 +431,8 @@ fn parse_format(format: &str) -> Result<Format> {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::PI;
+
     use crate::prelude::*;
 
     macro_rules! assert_format {
@@ -536,7 +538,7 @@ mod tests {
         // Create test values
         let integer = 42;
         let negative = -42i32;
-        let float = 3.14159;
+        let float = PI;
         let string = "hello";
         let character = 'A';
         let boolean = true;
@@ -579,7 +581,7 @@ mod tests {
     #[test]
     fn test_precision_variations() {
         // Test precision on different types
-        let float = 3.14159;
+        let float = PI;
         let string = "hello";
 
         // Float precision
@@ -607,8 +609,8 @@ mod tests {
         assert_format!("{:*^+7}", 42);
 
         // Alignment + width + precision
-        assert_format!("{:7.2}", 3.14159);
-        assert_format!("{:<7.2}", 3.14159);
+        assert_format!("{:7.2}", PI);
+        assert_format!("{:<7.2}", PI);
 
         // # + zero padding + width + type
         assert_format!("{:#06x}", 42);
@@ -616,8 +618,8 @@ mod tests {
         assert_format!("{:#06X}", 42);
 
         // Fill + align + zero + width + precision
-        assert_format!("{:06.2}", 3.14159);
-        assert_format!("{:#>6.2}", 3.14159);
+        assert_format!("{:06.2}", PI);
+        assert_format!("{:#>6.2}", PI);
 
         // Complex alignment with sign
         assert_format!("{:>+5}", 42);
@@ -648,7 +650,7 @@ mod tests {
         // Test nested formats where width/precision come from parameters
         let width = 10;
         let precision = 2;
-        let number = 3.14159;
+        let number = PI;
 
         assert_format!("{:1$.2$}", number, width, precision);
 
